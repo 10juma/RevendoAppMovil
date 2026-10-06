@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Sin esto los builds de release (Play Store) no pueden conectarse a la Api; solo debug/profile lo traen por defecto. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="revendo"
         android:name="${applicationName}"
