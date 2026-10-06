@@ -31,15 +31,18 @@ class _GastosScreenState extends State<GastosScreen> {
 
   String _buscar = '';
   String? _categoria;
+  String? _usuario;
   DateTime? _desde;
   DateTime? _hasta;
   List<String> _categoriasDisponibles = [];
+  List<String> _usuariosDisponibles = [];
 
   bool get _hayFiltros =>
-      _categoria != null || _desde != null || _hasta != null;
+      _categoria != null || _usuario != null || _desde != null || _hasta != null;
 
   bool _filtro(Gasto g) {
     if (_categoria != null && g.categoria != _categoria) return false;
+    if (_usuario != null && g.usuarioNombre != _usuario) return false;
     if (_desde != null && g.fecha.isBefore(_desde!)) return false;
     if (_hasta != null &&
         g.fecha.isAfter(_hasta!.add(const Duration(days: 1)))) {
@@ -54,6 +57,7 @@ class _GastosScreenState extends State<GastosScreen> {
 
   void _abrirFiltros() {
     String? categoria = _categoria;
+    String? usuario = _usuario;
     DateTime? desde = _desde;
     DateTime? hasta = _hasta;
     showFiltrosSheet(
@@ -61,11 +65,13 @@ class _GastosScreenState extends State<GastosScreen> {
       titulo: 'Filtrar gastos',
       onLimpiar: () => setState(() {
         _categoria = null;
+        _usuario = null;
         _desde = null;
         _hasta = null;
       }),
       onAplicar: () => setState(() {
         _categoria = categoria;
+        _usuario = usuario;
         _desde = desde;
         _hasta = hasta;
       }),
@@ -83,6 +89,17 @@ class _GastosScreenState extends State<GastosScreen> {
                   ),
                 ],
                 onChanged: (v) => setSheet(() => categoria = v),
+              ),
+              FiltroDropdown<String?>(
+                etiqueta: 'Usuario',
+                valor: usuario,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Todos los usuarios')),
+                  ..._usuariosDisponibles.map(
+                    (u) => DropdownMenuItem(value: u, child: Text(u)),
+                  ),
+                ],
+                onChanged: (v) => setSheet(() => usuario = v),
               ),
               FiltroFecha(
                 etiqueta: 'Desde',
@@ -134,7 +151,12 @@ class _GastosScreenState extends State<GastosScreen> {
       onCargado: (items) {
         final categorias = items.map((g) => g.categoria).toSet().toList()
           ..sort();
-        setState(() => _categoriasDisponibles = categorias);
+        final usuarios = items.map((g) => g.usuarioNombre).whereType<String>().toSet().toList()
+          ..sort();
+        setState(() {
+          _categoriasDisponibles = categorias;
+          _usuariosDisponibles = usuarios;
+        });
       },
       fetch: (api) async {
         final data = await api.listarGastos();
@@ -148,7 +170,10 @@ class _GastosScreenState extends State<GastosScreen> {
           titulo: g.descripcion,
           subtitulo: '${g.categoria} · ${_fecha(g.fecha)}',
           trailing: _moneda.format(g.monto),
-          filas: [if (g.nota != null) MapEntry('Nota', g.nota!)],
+          filas: [
+            if (g.usuarioNombre != null) MapEntry('Registró', g.usuarioNombre!),
+            if (g.nota != null) MapEntry('Nota', g.nota!),
+          ],
         ),
       ),
     );

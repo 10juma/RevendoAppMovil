@@ -98,6 +98,7 @@ class VentaDetalleScreen extends StatelessWidget {
                 _fila('Canal', venta.canal),
                 _fila('Pagada', venta.pagada ? 'Sí' : 'No'),
                 _fila('Entrega', venta.estadoEntrega),
+                if (venta.usuarioNombre != null) _fila('Registró', venta.usuarioNombre!),
                 if (venta.repartidorNombre != null) _fila('Repartidor', venta.repartidorNombre!),
                 if (venta.nota != null && venta.nota!.isNotEmpty) _fila('Nota', venta.nota!),
               ],

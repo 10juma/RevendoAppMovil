@@ -263,6 +263,9 @@ class _RutasScreenState extends State<RutasScreen> {
           trailing: v.estadoEntrega,
           trailingColor: _colorEstado(v.estadoEntrega),
           filas: [
+            // Lo primero que necesita quien reparte: a dónde va.
+            if ((v.clienteDireccion ?? '').trim().isNotEmpty)
+              MapEntry('Dirección', v.clienteDireccion!.trim()),
             MapEntry('Fecha', _fecha(v.fecha)),
             MapEntry('Total', _moneda.format(v.total)),
             MapEntry('Almacén', v.almacenNombre),

@@ -15,6 +15,9 @@ class InfoCard extends StatelessWidget {
   final bool inactivo;
   final List<Widget> acciones;
 
+  /// Texto libre (p. ej. la nota de una venta) que se muestra debajo de las filas, a lo más 2 líneas.
+  final String? nota;
+
   const InfoCard({
     super.key,
     required this.titulo,
@@ -24,6 +27,7 @@ class InfoCard extends StatelessWidget {
     this.filas = const [],
     this.inactivo = false,
     this.acciones = const [],
+    this.nota,
   });
 
   @override
@@ -115,6 +119,19 @@ class InfoCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                ),
+              ),
+            ],
+            if (nota != null && nota!.trim().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                nota!.trim(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontStyle: FontStyle.italic,
+                  color: AppColors.textMuted,
                 ),
               ),
             ],

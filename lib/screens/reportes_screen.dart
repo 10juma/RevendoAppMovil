@@ -4,13 +4,14 @@ import 'package:intl/intl.dart';
 import '../iconos_menu.dart';
 import '../models/reporte.dart';
 import '../models/sesion.dart';
+import '../models/usuario.dart';
 import '../services/api_client.dart';
 import '../theme.dart';
 
 /// Mismo contenido que /Admin/Reportes en el panel web, en 3 pestañas
-/// (Ventas, Compras, Gastos) en vez de un selector — sin filtros de
-/// cliente/proveedor/categoría todavía, siempre últimos 30 días (mismo
-/// default que ya usa Revendo.Api cuando no se mandan fechas).
+/// (Ventas, Compras, Gastos) en vez de un selector — siempre últimos 30 días
+/// (mismo default que ya usa Revendo.Api cuando no se mandan fechas). Único
+/// filtro por ahora: quién registró (todos los usuarios o uno), igual en las 3.
 class ReportesScreen extends StatefulWidget {
   final Sesion sesion;
 
@@ -24,12 +25,103 @@ class _ReportesScreenState extends State<ReportesScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
 
+  List<Usuario> _usuarios = [];
+  String? _usuarioId;
+
   ApiClient get _api => ApiClient(token: widget.sesion.token);
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    _cargarUsuarios();
+  }
+
+  Future<void> _cargarUsuarios() async {
+    try {
+      final data = await _api.listarEquipo();
+      if (!mounted) return;
+      setState(() {
+        _usuarios = data
+            .map((e) => Usuario.fromJson(e as Map<String, dynamic>))
+            .toList()
+          ..sort((a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()));
+      });
+    } catch (_) {
+      // Sin la lista simplemente no se muestra el filtro; los reportes siguen funcionando.
+    }
+  }
+
+  void _elegirUsuario() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardBg,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final o in <Usuario?>[null, ..._usuarios])
+                ListTile(
+                  title: Text(
+                    o == null ? 'Todos los usuarios' : (o.activo ? o.nombre : '${o.nombre} (inactivo)'),
+                    style: TextStyle(
+                      fontWeight: o?.id == _usuarioId ? FontWeight.bold : FontWeight.normal,
+                      color: o?.id == _usuarioId ? AppColors.accentDark : AppColors.text,
+                    ),
+                  ),
+                  trailing: o?.id == _usuarioId
+                      ? const Icon(Icons.check_rounded, color: AppColors.accentDark)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    if (o?.id == _usuarioId) return;
+                    // Las pestañas llevan el usuario en su key: al cambiarlo se recargan solas.
+                    setState(() => _usuarioId = o?.id);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// "Todos los usuarios" o el nombre elegido — filtra las 3 pestañas.
+  Widget _selectorUsuario() {
+    if (_usuarios.isEmpty) return const SizedBox.shrink();
+
+    final elegido = _usuarios.where((u) => u.id == _usuarioId);
+    final texto = elegido.isEmpty ? 'Todos los usuarios' : elegido.first.nombre;
+
+    return InkWell(
+      onTap: _elegirUsuario,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Row(
+          children: [
+            const Icon(Icons.person_outline_rounded, size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                texto,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: _usuarioId == null ? AppColors.textMuted : AppColors.accentDark,
+                ),
+              ),
+            ),
+            const Icon(Icons.expand_more_rounded, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -55,12 +147,19 @@ class _ReportesScreenState extends State<ReportesScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabs,
+      body: Column(
         children: [
-          _VentasTab(api: _api),
-          _ComprasTab(api: _api),
-          _GastosTab(api: _api),
+          _selectorUsuario(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                _VentasTab(key: ValueKey('ventas-$_usuarioId'), api: _api, usuarioId: _usuarioId),
+                _ComprasTab(key: ValueKey('compras-$_usuarioId'), api: _api, usuarioId: _usuarioId),
+                _GastosTab(key: ValueKey('gastos-$_usuarioId'), api: _api, usuarioId: _usuarioId),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -76,7 +175,8 @@ final _entero = NumberFormat.decimalPattern('es_MX');
 
 class _VentasTab extends StatefulWidget {
   final ApiClient api;
-  const _VentasTab({required this.api});
+  final String? usuarioId;
+  const _VentasTab({super.key, required this.api, this.usuarioId});
 
   @override
   State<_VentasTab> createState() => _VentasTabState();
@@ -99,7 +199,7 @@ class _VentasTabState extends State<_VentasTab> {
       _error = null;
     });
     try {
-      final data = await widget.api.obtenerReporte('ventas');
+      final data = await widget.api.obtenerReporte('ventas', usuarioId: widget.usuarioId);
       if (!mounted) return;
       setState(() {
         _reporte = ReporteVentas.fromJson(data);
@@ -165,7 +265,8 @@ class _VentasTabState extends State<_VentasTab> {
 
 class _ComprasTab extends StatefulWidget {
   final ApiClient api;
-  const _ComprasTab({required this.api});
+  final String? usuarioId;
+  const _ComprasTab({super.key, required this.api, this.usuarioId});
 
   @override
   State<_ComprasTab> createState() => _ComprasTabState();
@@ -188,7 +289,7 @@ class _ComprasTabState extends State<_ComprasTab> {
       _error = null;
     });
     try {
-      final data = await widget.api.obtenerReporte('compras');
+      final data = await widget.api.obtenerReporte('compras', usuarioId: widget.usuarioId);
       if (!mounted) return;
       setState(() {
         _reporte = ReporteCompras.fromJson(data);
@@ -257,7 +358,8 @@ class _ComprasTabState extends State<_ComprasTab> {
 
 class _GastosTab extends StatefulWidget {
   final ApiClient api;
-  const _GastosTab({required this.api});
+  final String? usuarioId;
+  const _GastosTab({super.key, required this.api, this.usuarioId});
 
   @override
   State<_GastosTab> createState() => _GastosTabState();
@@ -280,7 +382,7 @@ class _GastosTabState extends State<_GastosTab> {
       _error = null;
     });
     try {
-      final data = await widget.api.obtenerReporte('gastos');
+      final data = await widget.api.obtenerReporte('gastos', usuarioId: widget.usuarioId);
       if (!mounted) return;
       setState(() {
         _reporte = ReporteGastos.fromJson(data);

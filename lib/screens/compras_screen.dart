@@ -33,17 +33,24 @@ class _ComprasScreenState extends State<ComprasScreen> {
   String _buscar = '';
   String? _proveedor;
   String? _almacen;
+  String? _usuario;
   DateTime? _desde;
   DateTime? _hasta;
   List<String> _proveedoresDisponibles = [];
   List<String> _almacenesDisponibles = [];
+  List<String> _usuariosDisponibles = [];
 
   bool get _hayFiltros =>
-      _proveedor != null || _almacen != null || _desde != null || _hasta != null;
+      _proveedor != null ||
+      _almacen != null ||
+      _usuario != null ||
+      _desde != null ||
+      _hasta != null;
 
   bool _filtro(Compra c) {
     if (_proveedor != null && c.proveedorNombre != _proveedor) return false;
     if (_almacen != null && c.almacenNombre != _almacen) return false;
+    if (_usuario != null && c.usuarioNombre != _usuario) return false;
     if (_desde != null && c.fecha.isBefore(_desde!)) return false;
     if (_hasta != null &&
         c.fecha.isAfter(_hasta!.add(const Duration(days: 1)))) {
@@ -59,6 +66,7 @@ class _ComprasScreenState extends State<ComprasScreen> {
   void _abrirFiltros() {
     String? proveedor = _proveedor;
     String? almacen = _almacen;
+    String? usuario = _usuario;
     DateTime? desde = _desde;
     DateTime? hasta = _hasta;
     showFiltrosSheet(
@@ -67,12 +75,14 @@ class _ComprasScreenState extends State<ComprasScreen> {
       onLimpiar: () => setState(() {
         _proveedor = null;
         _almacen = null;
+        _usuario = null;
         _desde = null;
         _hasta = null;
       }),
       onAplicar: () => setState(() {
         _proveedor = proveedor;
         _almacen = almacen;
+        _usuario = usuario;
         _desde = desde;
         _hasta = hasta;
       }),
@@ -101,6 +111,17 @@ class _ComprasScreenState extends State<ComprasScreen> {
                   ),
                 ],
                 onChanged: (v) => setSheet(() => almacen = v),
+              ),
+              FiltroDropdown<String?>(
+                etiqueta: 'Usuario',
+                valor: usuario,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Todos los usuarios')),
+                  ..._usuariosDisponibles.map(
+                    (u) => DropdownMenuItem(value: u, child: Text(u)),
+                  ),
+                ],
+                onChanged: (v) => setSheet(() => usuario = v),
               ),
               FiltroFecha(
                 etiqueta: 'Desde',
@@ -161,6 +182,8 @@ class _ComprasScreenState extends State<ComprasScreen> {
               items.map((c) => c.proveedorNombre).toSet().toList()..sort();
           _almacenesDisponibles =
               items.map((c) => c.almacenNombre).toSet().toList()..sort();
+          _usuariosDisponibles =
+              items.map((c) => c.usuarioNombre).whereType<String>().toSet().toList()..sort();
         });
       },
       fetch: (api) async {
@@ -177,6 +200,7 @@ class _ComprasScreenState extends State<ComprasScreen> {
           trailing: _moneda.format(c.total),
           filas: [
             MapEntry('Productos', '${c.items.length} línea(s)'),
+            if (c.usuarioNombre != null) MapEntry('Registró', c.usuarioNombre!),
             if (c.nota != null) MapEntry('Nota', c.nota!),
           ],
           acciones: [

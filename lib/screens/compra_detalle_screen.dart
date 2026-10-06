@@ -92,6 +92,7 @@ class CompraDetalleScreen extends StatelessWidget {
                 const SizedBox(height: 10),
                 _fila('Fecha', _fecha(compra.fecha.toLocal())),
                 _fila('Almacén', compra.almacenNombre),
+                if (compra.usuarioNombre != null) _fila('Registró', compra.usuarioNombre!),
                 if (compra.nota != null && compra.nota!.isNotEmpty) _fila('Nota', compra.nota!),
               ],
             ),

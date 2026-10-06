@@ -35,6 +35,18 @@ class ApiClient {
     if (res.statusCode == 401) {
       throw ApiException('Correo o contraseña incorrectos.');
     }
+    // 403 = la contraseña es correcta pero el usuario está inactivo (o el negocio suspendido):
+    // el servidor manda el motivo en "mensaje".
+    if (res.statusCode == 403) {
+      var mensaje = 'No tienes acceso en este momento. Habla con el administrador de tu negocio.';
+      try {
+        final cuerpo = jsonDecode(utf8.decode(res.bodyBytes));
+        if (cuerpo is Map && cuerpo['mensaje'] is String) {
+          mensaje = cuerpo['mensaje'] as String;
+        }
+      } catch (_) {}
+      throw ApiException(mensaje);
+    }
     if (res.statusCode != 200) {
       throw ApiException('No se pudo iniciar sesión — intenta de nuevo.');
     }
@@ -91,10 +103,14 @@ class ApiClient {
   }
 
   /// Solo Admin — las 3 pestañas de /Admin/Reportes (ReportesController.cs).
-  /// Sin fechas, el backend usa los últimos 30 días.
-  Future<Map<String, dynamic>> obtenerReporte(String pestana) async {
+  /// Sin fechas, el backend usa los últimos 30 días. Con [usuarioId], solo lo
+  /// que registró ese usuario.
+  Future<Map<String, dynamic>> obtenerReporte(String pestana, {String? usuarioId}) async {
+    final uri = Uri.parse('$baseUrl/api/reportes/$pestana').replace(
+      queryParameters: {if (usuarioId != null) 'usuarioId': usuarioId},
+    );
     final res = await http
-        .get(Uri.parse('$baseUrl/api/reportes/$pestana'), headers: _headers)
+        .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 15));
 
     if (res.statusCode == 401) throw ApiException('sesion_expirada');

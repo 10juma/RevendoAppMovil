@@ -31,6 +31,10 @@ class Compra {
   final double total;
   final List<CompraItem> items;
 
+  /// Quién registró la compra; null en las anteriores a este dato.
+  final String? usuarioId;
+  final String? usuarioNombre;
+
   Compra({
     required this.id,
     required this.fecha,
@@ -41,6 +45,8 @@ class Compra {
     required this.nota,
     required this.total,
     required this.items,
+    this.usuarioId,
+    this.usuarioNombre,
   });
 
   factory Compra.fromJson(Map<String, dynamic> json) => Compra(
@@ -55,5 +61,7 @@ class Compra {
     items: (json['items'] as List)
         .map((e) => CompraItem.fromJson(e as Map<String, dynamic>))
         .toList(),
+    usuarioId: json['usuarioId'] as String?,
+    usuarioNombre: json['usuarioNombre'] as String?,
   );
 }

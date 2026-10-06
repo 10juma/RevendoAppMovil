@@ -40,11 +40,13 @@ class _VentasScreenState extends State<VentasScreen> {
   String? _cliente;
   String? _canal;
   String? _almacen;
+  String? _usuario;
   DateTime? _desde;
   DateTime? _hasta;
   List<String> _clientesDisponibles = [];
   List<String> _canalesDisponibles = [];
   List<String> _almacenesDisponibles = [];
+  List<String> _usuariosDisponibles = [];
   List<Cliente> _clientes = [];
 
   ApiClient get _api => ApiClient(token: widget.sesion.token);
@@ -75,6 +77,7 @@ class _VentasScreenState extends State<VentasScreen> {
       _cliente != null ||
       _canal != null ||
       _almacen != null ||
+      _usuario != null ||
       _desde != null ||
       _hasta != null;
 
@@ -84,6 +87,7 @@ class _VentasScreenState extends State<VentasScreen> {
     }
     if (_canal != null && v.canal != _canal) return false;
     if (_almacen != null && v.almacenNombre != _almacen) return false;
+    if (_usuario != null && v.usuarioNombre != _usuario) return false;
     if (_desde != null && v.fecha.isBefore(_desde!)) return false;
     if (_hasta != null &&
         v.fecha.isAfter(_hasta!.add(const Duration(days: 1)))) {
@@ -100,6 +104,7 @@ class _VentasScreenState extends State<VentasScreen> {
     String? cliente = _cliente;
     String? canal = _canal;
     String? almacen = _almacen;
+    String? usuario = _usuario;
     DateTime? desde = _desde;
     DateTime? hasta = _hasta;
     showFiltrosSheet(
@@ -109,6 +114,7 @@ class _VentasScreenState extends State<VentasScreen> {
         _cliente = null;
         _canal = null;
         _almacen = null;
+        _usuario = null;
         _desde = null;
         _hasta = null;
       }),
@@ -116,6 +122,7 @@ class _VentasScreenState extends State<VentasScreen> {
         _cliente = cliente;
         _canal = canal;
         _almacen = almacen;
+        _usuario = usuario;
         _desde = desde;
         _hasta = hasta;
       }),
@@ -155,6 +162,17 @@ class _VentasScreenState extends State<VentasScreen> {
                   ),
                 ],
                 onChanged: (v) => setSheet(() => almacen = v),
+              ),
+              FiltroDropdown<String?>(
+                etiqueta: 'Usuario',
+                valor: usuario,
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Todos los usuarios')),
+                  ..._usuariosDisponibles.map(
+                    (u) => DropdownMenuItem(value: u, child: Text(u)),
+                  ),
+                ],
+                onChanged: (v) => setSheet(() => usuario = v),
               ),
               FiltroFecha(
                 etiqueta: 'Desde',
@@ -324,6 +342,8 @@ class _VentasScreenState extends State<VentasScreen> {
           _canalesDisponibles = items.map((v) => v.canal).toSet().toList()..sort();
           _almacenesDisponibles =
               items.map((v) => v.almacenNombre).toSet().toList()..sort();
+          _usuariosDisponibles =
+              items.map((v) => v.usuarioNombre).whereType<String>().toSet().toList()..sort();
         });
       },
       fetch: (api) async {
@@ -344,7 +364,10 @@ class _VentasScreenState extends State<VentasScreen> {
             MapEntry('Entrega', v.estadoEntrega),
             if (v.repartidorNombre != null)
               MapEntry('Repartidor', v.repartidorNombre!),
+            if (v.usuarioNombre != null) MapEntry('Registró', v.usuarioNombre!),
           ],
+          // La nota se ve en la tarjeta, sin tener que abrir el detalle.
+          nota: v.nota,
           acciones: [
             TextButton.icon(
               onPressed: () => _abrirVincularCliente(v),

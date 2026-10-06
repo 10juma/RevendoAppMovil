@@ -36,6 +36,13 @@ class Venta {
   final double total;
   final List<VentaItem> items;
 
+  /// Quién registró la venta; null en las ventas anteriores a este dato.
+  final String? usuarioNombre;
+  final String? usuarioId;
+
+  /// Dirección del cliente (si la tiene) — para que en Rutas se vea a dónde va la entrega.
+  final String? clienteDireccion;
+
   Venta({
     required this.id,
     required this.fecha,
@@ -50,6 +57,9 @@ class Venta {
     required this.repartidorNombre,
     required this.total,
     required this.items,
+    this.usuarioNombre,
+    this.usuarioId,
+    this.clienteDireccion,
   });
 
   factory Venta.fromJson(Map<String, dynamic> json) => Venta(
@@ -68,5 +78,8 @@ class Venta {
     items: (json['items'] as List)
         .map((e) => VentaItem.fromJson(e as Map<String, dynamic>))
         .toList(),
+    usuarioNombre: json['usuarioNombre'] as String?,
+    usuarioId: json['usuarioId'] as String?,
+    clienteDireccion: json['clienteDireccion'] as String?,
   );
 }
