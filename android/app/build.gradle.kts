@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -20,18 +19,14 @@ android {
     namespace = "com.globalappsuite.revendo"
     compileSdk = flutter.compileSdkVersion
     // flutter.ndkVersion se calcula como el máximo que pidan los plugins instalados —
-    // en esta máquina eso resolvía a una versión ("25.0.3") que nunca se instaló (aquí
-    // solo hay 27.0.12077973 y 28.2.13676358), y el build fallaba con un error sin
-    // detalle ("What went wrong: 25.0.3"). Se fija a mano la que sí está instalada.
-    ndkVersion = "27.0.12077973"
+    // en esta máquina eso resolvía a una versión ("25.0.3") que nunca se instaló, y el build
+    // fallaba con un error sin detalle ("What went wrong: 25.0.3"). Se fija a mano la más
+    // nueva instalada (28.2.13676358: el plugin jni la exige; los NDK son retrocompatibles).
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {

@@ -19,8 +19,9 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.11.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
+    id("com.android.application") version "9.0.1" apply false
+    // Solo fija la versión de Kotlin que usa el "Kotlin integrado" de Android (la que trae por defecto es menor a la que pide Flutter).
+    id("org.jetbrains.kotlin.android") version "2.3.20" apply false
 }
 
 include(":app")
