@@ -20,6 +20,14 @@ class RevendoApp extends StatelessWidget {
       title: 'Revendo',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      // Tocar fuera de un campo oculta el teclado (el teclado numérico de iOS
+      // no trae botón de "Listo"). Si el toque es en un botón o en un campo,
+      // ese widget gana y esto no se dispara.
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
+      ),
       home: const _Arranque(),
     );
   }

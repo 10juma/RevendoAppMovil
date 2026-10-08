@@ -135,6 +135,7 @@ class _BuscadorSheetState<T> extends State<_BuscadorSheet<T>> {
                       ),
                     )
                   : ListView.separated(
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       itemCount: _filtrados.length,
                       separatorBuilder: (_, __) =>

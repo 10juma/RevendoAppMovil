@@ -73,6 +73,8 @@ class _FormScaffoldState extends State<FormScaffold> {
       body: Form(
         key: widget.formKey,
         child: ListView(
+          // Arrastrar la lista también oculta el teclado.
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           children: [
             if (_error != null) ...[

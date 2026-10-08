@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/almacen.dart';
 import '../models/cliente.dart';
 import '../models/existencia.dart';
+import '../models/lista_precios.dart';
 import '../models/producto.dart';
 import '../models/sesion.dart';
 import '../models/venta.dart';
@@ -23,8 +24,21 @@ const _canalOptions = [
   DropdownMenuItem(value: 'Otro', child: Text('Otro')),
 ];
 
+/// Lo que se elige en el selector de producto: un producto suelto o un grupo de
+/// productos que comparten el mismo "nombre para mostrar" en la lista de precios
+/// activa (son intercambiables: se descuenta del que tenga existencia).
+class _OpcionProducto {
+  final String etiqueta;
+  final List<Producto> productos;
+  final bool grupo;
+  _OpcionProducto(this.etiqueta, this.productos, {this.grupo = false});
+}
+
 class _Linea {
-  Producto? producto;
+  _OpcionProducto? opcion;
+  /// Al editar: el producto que la venta ya tenía, para conservarlo si dentro
+  /// de un grupo sigue alcanzando la existencia.
+  String? productoOriginalId;
   final TextEditingController cantidad = TextEditingController();
   final TextEditingController precio = TextEditingController();
   void dispose() {
@@ -34,9 +48,11 @@ class _Linea {
 }
 
 /// Alta o edición de una venta — mismos campos que el modal "Nueva venta" /
-/// "Editar venta" de /Admin/Ventas en la web (sin el autocompletado de la
-/// lista de precios activa ni los grupos de alias — el precio se escribe a
-/// mano). Editar concilia las existencias en el servidor, igual que la web;
+/// "Editar venta" de /Admin/Ventas en la web, incluida la lista de precios
+/// activa (precio especial, descuento y nombre para mostrar; los productos con
+/// el mismo nombre se agrupan y se descuenta del que tenga existencia). El
+/// precio sigue siendo editable a mano. Editar concilia las existencias en el
+/// servidor, igual que la web;
 /// el estado de entrega no se toca desde aquí (eso es de Rutas de reparto).
 class VentaFormScreen extends StatefulWidget {
   final Sesion sesion;
@@ -63,6 +79,9 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
   List<Almacen> _almacenes = [];
   List<Producto> _productos = [];
   List<Existencia> _existencias = [];
+  ListaPrecios? _lista;
+  Map<String, ListaPreciosItem> _itemsLista = {};
+  List<_OpcionProducto> _opciones = [];
 
   bool get _editando => widget.venta != null;
 
@@ -80,6 +99,8 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
       final almacenes = await _api.listarAlmacenes();
       final productos = await _api.listarProductos();
       final existencias = await _api.listarExistencias();
+      // Si no hay lista activa (o la API aún no la expone) se vende a precio de catálogo.
+      final listas = await _api.listarListaPreciosActiva().catchError((_) => <dynamic>[]);
       if (!mounted) return;
       setState(() {
         _clientes = clientes
@@ -97,6 +118,9 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
         _existencias = existencias
             .map((e) => Existencia.fromJson(e as Map<String, dynamic>))
             .toList();
+        _lista = listas.isEmpty ? null : ListaPrecios.fromJson(listas.first as Map<String, dynamic>);
+        _itemsLista = {for (final i in _lista?.items ?? <ListaPreciosItem>[]) i.productoId: i};
+        _armarOpciones();
         _precargarVenta();
         _cargando = false;
       });
@@ -105,6 +129,63 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
       setState(() => _cargando = false);
     }
   }
+
+  /// Arma lo que ofrece el selector: cada producto con su nombre para mostrar
+  /// (si la lista activa se lo cambia) y, en lugar de los productos que
+  /// comparten un mismo nombre, una sola opción de grupo — igual que la web.
+  void _armarOpciones() {
+    final idsPorAlias = <String, Set<String>>{};
+    for (final it in _itemsLista.values) {
+      final alias = it.nombreMostrado?.trim();
+      if (alias == null || alias.isEmpty) continue;
+      idsPorAlias.putIfAbsent(alias, () => <String>{}).add(it.productoId);
+    }
+
+    final enGrupo = <String>{};
+    final opciones = <_OpcionProducto>[];
+    idsPorAlias.forEach((alias, ids) {
+      if (ids.length < 2) return;
+      enGrupo.addAll(ids);
+      final productos = _productos.where((p) => ids.contains(p.id)).toList();
+      if (productos.isNotEmpty) opciones.add(_OpcionProducto(alias, productos, grupo: true));
+    });
+
+    for (final p in _productos) {
+      if (enGrupo.contains(p.id)) continue;
+      final alias = _itemsLista[p.id]?.nombreMostrado?.trim();
+      opciones.add(_OpcionProducto(alias == null || alias.isEmpty ? p.nombre : alias, [p]));
+    }
+
+    opciones.sort((a, b) => a.etiqueta.toLowerCase().compareTo(b.etiqueta.toLowerCase()));
+    _opciones = opciones;
+  }
+
+  /// Precio que se prellena: el precio especial de la lista (o el de catálogo)
+  /// menos el descuento de la lista, si lo tiene. Sin precio en ningún lado: 0.
+  double _precioDe(Producto p) {
+    final catalogo = p.precioVenta ?? 0;
+    final item = _itemsLista[p.id];
+    if (item == null) return catalogo;
+    final base = item.precioLista ?? catalogo;
+    final d = item.descuentoPorcentaje;
+    return d == null ? base : double.parse((base * (1 - d / 100)).toStringAsFixed(2));
+  }
+
+  /// Texto bajo la línea: qué promo de la lista aplica al producto elegido.
+  String? _promoDe(_OpcionProducto op) {
+    if (op.grupo) {
+      return 'Se descontará del producto ligado a "${op.etiqueta}" que tenga existencia disponible.';
+    }
+    final item = _itemsLista[op.productos.first.id];
+    if (item == null || _lista == null) return null;
+    final partes = <String>[
+      if (item.precioLista != null) 'precio especial',
+      if (item.descuentoPorcentaje != null) '-${_pct(item.descuentoPorcentaje!)}%',
+    ];
+    return partes.isEmpty ? null : '${_lista!.nombre}: ${partes.join(' ')}';
+  }
+
+  static String _pct(double d) => d == d.roundToDouble() ? d.toInt().toString() : d.toStringAsFixed(1);
 
   /// Al editar, rellena el formulario con lo que ya tiene la venta.
   void _precargarVenta() {
@@ -127,40 +208,53 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
       ..clear()
       ..addAll(v.items.map((i) {
         final linea = _Linea();
-        for (final p in _productos) {
-          if (p.id == i.productoId) linea.producto = p;
+        for (final o in _opciones) {
+          if (o.productos.any((p) => p.id == i.productoId)) linea.opcion = o;
         }
+        linea.productoOriginalId = i.productoId;
         linea.cantidad.text = i.cantidad.toString();
         linea.precio.text = i.precioUnitario.toStringAsFixed(2);
         return linea;
       }));
   }
 
-  /// Cuánto hay del producto de [linea] en el almacén elegido, restando lo
-  /// que ya usan las DEMÁS líneas de esta misma venta — mismo criterio que
-  /// actualizarStockInfoVenta() en /Admin/Ventas (ahí es "cantidadYaEnCarrito").
-  double? _disponiblePara(_Linea linea) {
-    final producto = linea.producto;
-    if (producto == null || _almacenId == null) return null;
-
+  /// Existencia del producto en el almacén elegido. Al editar, lo que esta
+  /// venta ya descontó del mismo almacén vuelve a estar disponible (el servidor
+  /// lo concilia al guardar).
+  double _enAlmacen(String productoId) {
     final existencia = _existencias.where(
-      (e) => e.productoId == producto.id && e.almacenId == _almacenId,
+      (e) => e.productoId == productoId && e.almacenId == _almacenId,
     );
     var enAlmacen = existencia.isEmpty ? 0.0 : existencia.first.cantidad;
 
-    // Al editar, lo que esta venta ya descontó del mismo almacén vuelve a
-    // estar disponible (el servidor lo concilia al guardar).
     final original = widget.venta;
     if (original != null && original.almacenId == _almacenId) {
       for (final i in original.items) {
-        if (i.productoId == producto.id) enAlmacen += i.cantidad;
+        if (i.productoId == productoId) enAlmacen += i.cantidad;
       }
+    }
+    return enAlmacen;
+  }
+
+  /// Cuánto hay de lo elegido en [linea] en el almacén, restando lo que ya
+  /// usan las DEMÁS líneas de esta misma venta — mismo criterio que
+  /// actualizarStockInfoVenta() en /Admin/Ventas (ahí es "cantidadYaEnCarrito").
+  /// Para un grupo es lo disponible entre todas sus variantes.
+  double? _disponiblePara(_Linea linea) {
+    final op = linea.opcion;
+    if (op == null || _almacenId == null) return null;
+
+    final ids = op.productos.map((p) => p.id).toSet();
+    var enAlmacen = 0.0;
+    for (final id in ids) {
+      enAlmacen += _enAlmacen(id);
     }
 
     var usadoEnOtras = 0.0;
     for (final l in _lineas) {
       if (identical(l, linea)) continue;
-      if (l.producto?.id != producto.id) continue;
+      final otra = l.opcion;
+      if (otra == null || !otra.productos.any((p) => ids.contains(p.id))) continue;
       usadoEnOtras += double.tryParse(l.cantidad.text.trim()) ?? 0;
     }
 
@@ -186,24 +280,58 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
     if (elegida != null) setState(() => _fechaSel = elegida);
   }
 
-  void _onProductoElegido(_Linea linea, Producto? producto) {
+  /// Cambiar el producto siempre refresca el precio al de la lista activa (o al
+  /// de catálogo) del producto nuevo — sigue siendo editable a mano.
+  void _onProductoElegido(_Linea linea, _OpcionProducto? opcion) {
     setState(() {
-      linea.producto = producto;
-      if (producto != null && producto.precioVenta != null && linea.precio.text.isEmpty) {
-        linea.precio.text = producto.precioVenta!.toStringAsFixed(2);
-      }
+      linea.opcion = opcion;
+      linea.precio.text = opcion == null ? '' : _precioDe(opcion.productos.first).toStringAsFixed(2);
     });
   }
 
   Future<void> _guardar() async {
-    final items = <Map<String, dynamic>>[];
+    final validas = <(_Linea, double, double)>[];
     for (final l in _lineas) {
       final cantidad = double.tryParse(l.cantidad.text.trim());
       final precio = double.tryParse(l.precio.text.trim());
-      if (l.producto == null || cantidad == null || cantidad <= 0 || precio == null || precio < 0) {
+      if (l.opcion == null || cantidad == null || cantidad <= 0 || precio == null || precio < 0) {
         continue;
       }
-      items.add({'productoId': l.producto!.id, 'cantidad': cantidad, 'precioUnitario': precio});
+      validas.add((l, cantidad, precio));
+    }
+
+    // Lo ya comprometido por productos sueltos; después, cada línea de grupo
+    // elige la variante con más existencia que alcance a cubrirla.
+    final usado = <String, double>{};
+    for (final (l, cantidad, _) in validas) {
+      if (!l.opcion!.grupo) {
+        final id = l.opcion!.productos.first.id;
+        usado[id] = (usado[id] ?? 0) + cantidad;
+      }
+    }
+
+    final items = <Map<String, dynamic>>[];
+    for (final (l, cantidad, precio) in validas) {
+      final op = l.opcion!;
+      String productoId;
+      if (!op.grupo) {
+        productoId = op.productos.first.id;
+      } else {
+        double libre(Producto p) => _enAlmacen(p.id) - (usado[p.id] ?? 0);
+        final candidatos = [...op.productos]..sort((a, b) => libre(b).compareTo(libre(a)));
+        final original = op.productos.where((p) => p.id == l.productoOriginalId);
+        final elegido = original.isNotEmpty && libre(original.first) >= cantidad
+            ? original.first
+            : candidatos.where((p) => libre(p) >= cantidad).firstOrNull;
+        if (elegido == null) {
+          throw ApiException(
+            'Ninguno de los productos ligados a "${op.etiqueta}" tiene existencia suficiente en ese almacén.',
+          );
+        }
+        productoId = elegido.id;
+        usado[productoId] = (usado[productoId] ?? 0) + cantidad;
+      }
+      items.add({'productoId': productoId, 'cantidad': cantidad, 'precioUnitario': precio});
     }
     if (items.isEmpty) {
       throw ApiException('Agrega al menos un producto con cantidad y precio');
@@ -314,10 +442,19 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
             label: const Text('Agregar'),
           ),
         ),
+        if (_lista != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Usando la lista de precios activa "${_lista!.nombre}" como base — puedes editar cualquier precio.',
+              style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+            ),
+          ),
         ..._lineas.asMap().entries.map((entry) {
           final i = entry.key;
           final linea = entry.value;
           return Container(
+            key: ObjectKey(linea),
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -331,14 +468,14 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: BuscadorCampo<Producto>(
+                      child: BuscadorCampo<_OpcionProducto>(
                         etiqueta: 'Producto',
-                        valor: linea.producto,
-                        opciones: _productos,
-                        etiquetaDe: (p) => p.nombre,
-                        subtituloDe: (p) => p.sku,
+                        valor: linea.opcion,
+                        opciones: _opciones,
+                        etiquetaDe: (o) => o.etiqueta,
+                        subtituloDe: (o) => o.grupo ? 'Variantes ligadas' : o.productos.first.sku,
                         hintBuscar: 'Buscar producto',
-                        onChanged: (p) => _onProductoElegido(linea, p),
+                        onChanged: (o) => _onProductoElegido(linea, o),
                       ),
                     ),
                     if (_lineas.length > 1)
@@ -379,11 +516,12 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
                     final disponible = _disponiblePara(linea)!;
                     final cantidad = double.tryParse(linea.cantidad.text.trim()) ?? 0;
                     final restante = disponible - cantidad;
-                    final unidad = linea.producto!.unidadMedida.toLowerCase();
+                    final unidad = linea.opcion!.productos.first.unidadMedida.toLowerCase();
+                    final de = linea.opcion!.grupo ? 'Disponible entre variantes ligadas' : 'Disponible';
                     return Text(
                       cantidad > 0
-                          ? 'Disponible: ${_entero.format(disponible)} $unidad — quedarán ${_entero.format(restante)} $unidad'
-                          : 'Disponible: ${_entero.format(disponible)} $unidad',
+                          ? '$de: ${_entero.format(disponible)} $unidad — quedarán ${_entero.format(restante)} $unidad'
+                          : '$de: ${_entero.format(disponible)} $unidad',
                       style: TextStyle(
                         fontSize: 12,
                         color: restante < 0 ? AppColors.error : AppColors.textMuted,
@@ -391,6 +529,13 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
                       ),
                     );
                   }),
+                ],
+                if (linea.opcion != null && _promoDe(linea.opcion!) != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _promoDe(linea.opcion!)!,
+                    style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  ),
                 ],
               ],
             ),

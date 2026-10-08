@@ -164,6 +164,12 @@ class ApiClient {
   Future<List<dynamic>> listarListasPrecios() async =>
       await _get('/api/listasprecios') as List<dynamic>;
 
+  /// Lista de precios activa del negocio (0 o 1 elemento). A diferencia de
+  /// listarListasPrecios (solo Admin), también la puede leer un Vendedor,
+  /// porque es la base de precios al capturar una venta.
+  Future<List<dynamic>> listarListaPreciosActiva() async =>
+      await _get('/api/ventas/lista-precios-activa') as List<dynamic>;
+
   Future<List<dynamic>> listarEquipo() async =>
       await _get('/api/equipo') as List<dynamic>;
 
