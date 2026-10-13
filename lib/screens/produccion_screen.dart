@@ -67,11 +67,8 @@ class _ProduccionScreenState extends State<ProduccionScreen> {
   }
 
   Future<void> _abrirProducir() async {
-    final guardado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => ProducirScreen(sesion: widget.sesion)),
-    );
-    if (guardado == true) _listKey.currentState?.reload();
+    final guardado = await abrirProducir(context, widget.sesion);
+    if (guardado) _listKey.currentState?.reload();
   }
 
   @override

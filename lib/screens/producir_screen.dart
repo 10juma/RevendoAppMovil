@@ -9,140 +9,85 @@ import '../services/api_client.dart';
 import '../theme.dart';
 import '../widgets/buscador_campo.dart';
 import '../widgets/form_scaffold.dart';
+import '../widgets/panel_inferior.dart';
 
 final _entero = NumberFormat.decimalPattern('es_MX');
 
-/// Producir un producto a partir de su receta — mismo modal "Producir" de
-/// /Admin/Produccion en la web: consume los insumos y da de alta el
-/// producto terminado en existencias.
-class ProducirScreen extends StatefulWidget {
-  final Sesion sesion;
-  const ProducirScreen({super.key, required this.sesion});
+/// Producir un producto a partir de su receta, en un panel — mismo modal
+/// "Producir" de /Admin/Produccion en la web: consume los insumos y da de
+/// alta el producto terminado en existencias. Arranca en el almacén
+/// principal y muestra cuánto se va a consumir contra lo que hay.
+/// Regresa `true` si se produjo.
+Future<bool> abrirProducir(BuildContext context, Sesion sesion) async {
+  final api = ApiClient(token: sesion.token);
+  Producto? productoSel;
+  String? almacenId;
+  final cantidad = TextEditingController();
 
-  @override
-  State<ProducirScreen> createState() => _ProducirScreenState();
-}
+  var producibles = <Producto>[];
+  var almacenes = <Almacen>[];
+  var existencias = <Existencia>[];
 
-class _ProducirScreenState extends State<ProducirScreen> {
-  final _formKey = GlobalKey<FormState>();
-  Producto? _productoSel;
-  String? _almacenId;
-  final _cantidad = TextEditingController();
-
-  bool _cargando = true;
-  List<Producto> _producibles = [];
-  List<Almacen> _almacenes = [];
-  List<Existencia> _existencias = [];
-
-  ApiClient get _api => ApiClient(token: widget.sesion.token);
-
-  @override
-  void initState() {
-    super.initState();
-    _cargarCatalogos();
-  }
-
-  Future<void> _cargarCatalogos() async {
-    try {
-      final productos = await _api.listarProductos();
-      final almacenes = await _api.listarAlmacenes();
-      final existencias = await _api.listarExistencias();
-      if (!mounted) return;
-      setState(() {
-        _producibles = productos
-            .map((e) => Producto.fromJson(e as Map<String, dynamic>))
-            .where((p) => p.tipo == 'Producido' && p.activo && p.receta.isNotEmpty)
-            .toList();
-        _almacenes = almacenes
-            .map((e) => Almacen.fromJson(e as Map<String, dynamic>))
-            .where((a) => a.activo)
-            .toList();
-        _existencias = existencias
-            .map((e) => Existencia.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _cargando = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _cargando = false);
-    }
-  }
+  final carga = () async {
+    final p = await api.listarProductos();
+    final a = await api.listarAlmacenes();
+    final e = await api.listarExistencias();
+    producibles = p
+        .map((x) => Producto.fromJson(x as Map<String, dynamic>))
+        .where((x) => x.tipo == 'Producido' && x.activo && x.receta.isNotEmpty)
+        .toList();
+    almacenes = a.map((x) => Almacen.fromJson(x as Map<String, dynamic>)).where((x) => x.activo).toList();
+    existencias = e.map((x) => Existencia.fromJson(x as Map<String, dynamic>)).toList();
+    final principal = almacenes.where((x) => x.esPrincipal);
+    if (principal.isNotEmpty) almacenId = principal.first.id;
+  }();
 
   /// Cuánto hay de un insumo en el almacén elegido — 0 si no hay registro.
-  double _tieneInsumo(String insumoId) {
-    if (_almacenId == null) return 0;
-    final existencia = _existencias.where(
-      (e) => e.productoId == insumoId && e.almacenId == _almacenId,
-    );
-    return existencia.isEmpty ? 0 : existencia.first.cantidad;
+  double tieneInsumo(String insumoId) {
+    if (almacenId == null) return 0;
+    final e = existencias.where((x) => x.productoId == insumoId && x.almacenId == almacenId);
+    return e.isEmpty ? 0 : e.first.cantidad;
   }
 
-  @override
-  void dispose() {
-    _cantidad.dispose();
-    super.dispose();
-  }
-
-  Future<void> _guardar() async {
-    await _api.producir({
-      'productoId': _productoSel?.id,
-      'almacenId': _almacenId,
-      'cantidad': double.parse(_cantidad.text.trim()),
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_cargando) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Producir')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_producibles.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Producir')),
-        body: const Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(
+  final producido = await mostrarPanelFormulario(
+    context: context,
+    titulo: 'Producir',
+    textoBoton: 'Producir',
+    carga: carga,
+    ocultarGuardar: () => producibles.isEmpty,
+    campos: (setPanel) {
+      if (producibles.isEmpty) {
+        return const [
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
             child: Text(
               'No tienes productos de tipo "Producido" con receta todavía — agrégala desde Productos antes de producir.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textMuted),
             ),
           ),
-        ),
-      );
-    }
-
-    return FormScaffold(
-      titulo: 'Producir',
-      textoBoton: 'Producir',
-      formKey: _formKey,
-      onGuardar: _guardar,
-      children: [
+        ];
+      }
+      return [
         BuscadorCampo<Producto>(
           etiqueta: 'Producto a producir',
-          valor: _productoSel,
-          opciones: _producibles,
+          valor: productoSel,
+          opciones: producibles,
           etiquetaDe: (p) => p.nombre,
           hintBuscar: 'Buscar producto',
-          onChanged: (p) => setState(() => _productoSel = p),
+          onChanged: (p) => setPanel(() => productoSel = p),
           validator: (p) => p == null ? 'Selecciona qué producto vas a producir' : null,
         ),
         FormDropdown<String>(
           etiqueta: 'Almacén',
-          valor: _almacenId,
-          items: _almacenes
-              .map((a) => DropdownMenuItem(value: a.id, child: Text(a.nombre)))
-              .toList(),
-          onChanged: (v) => setState(() => _almacenId = v),
+          valor: almacenId,
+          items: almacenes.map((a) => DropdownMenuItem(value: a.id, child: Text(a.nombre))).toList(),
+          onChanged: (v) => setPanel(() => almacenId = v),
           validator: (v) => v == null ? 'Selecciona un almacén' : null,
         ),
         CampoTexto(
           etiqueta: 'Cantidad a producir',
-          controller: _cantidad,
+          controller: cantidad,
           teclado: const TextInputType.numberWithOptions(decimal: true),
           validator: (v) {
             final n = double.tryParse(v?.trim() ?? '');
@@ -150,11 +95,11 @@ class _ProducirScreenState extends State<ProducirScreen> {
             return null;
           },
         ),
-        if (_productoSel != null)
+        if (productoSel != null)
           AnimatedBuilder(
-            animation: _cantidad,
+            animation: cantidad,
             builder: (context, _) {
-              final cantidadProducir = double.tryParse(_cantidad.text.trim()) ?? 0;
+              final cantidadProducir = double.tryParse(cantidad.text.trim()) ?? 0;
               if (cantidadProducir <= 0) return const SizedBox.shrink();
 
               return Container(
@@ -170,16 +115,12 @@ class _ProducirScreenState extends State<ProducirScreen> {
                   children: [
                     const Text(
                       'Vas a consumir',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textMuted,
-                      ),
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textMuted),
                     ),
                     const SizedBox(height: 8),
-                    ..._productoSel!.receta.map((r) {
+                    ...productoSel!.receta.map((r) {
                       final necesitas = r.cantidad * cantidadProducir;
-                      final tienes = _tieneInsumo(r.insumoId);
+                      final tienes = tieneInsumo(r.insumoId);
                       final faltante = tienes < necesitas;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
@@ -209,7 +150,17 @@ class _ProducirScreenState extends State<ProducirScreen> {
               );
             },
           ),
-      ],
-    );
-  }
+      ];
+    },
+    onGuardar: () async {
+      await api.producir({
+        'productoId': productoSel?.id,
+        'almacenId': almacenId,
+        'cantidad': double.parse(cantidad.text.trim()),
+      });
+    },
+  );
+
+  liberarControladores([cantidad]);
+  return producido;
 }

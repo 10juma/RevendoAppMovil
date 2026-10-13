@@ -174,12 +174,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _abrirNuevoCliente() async {
-    final guardado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => ClienteFormScreen(sesion: widget.sesion)),
-    );
+    final guardado = await abrirFormularioCliente(context, widget.sesion);
     // Afecta "Clientes nuevos" en la tarjeta de Ventas del Dashboard.
-    if (guardado == true) _cargar();
+    if (guardado) _cargar();
   }
 
   @override

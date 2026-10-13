@@ -54,13 +54,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 
   Future<void> _abrirFormulario([Cliente? cliente]) async {
-    final guardado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ClienteFormScreen(sesion: widget.sesion, cliente: cliente),
-      ),
-    );
-    if (guardado == true) _listKey.currentState?.reload();
+    final guardado = await abrirFormularioCliente(context, widget.sesion, cliente: cliente);
+    if (guardado) _listKey.currentState?.reload();
   }
 
   @override

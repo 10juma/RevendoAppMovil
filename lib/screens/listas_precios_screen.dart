@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../iconos_menu.dart';
 import '../models/lista_precios.dart';
 import '../models/sesion.dart';
+import '../services/compartir_lista_precios.dart';
 import '../widgets/info_card.dart';
 import '../widgets/simple_list_screen.dart';
 import 'lista_precios_form_screen.dart';
@@ -58,6 +59,13 @@ class _ListasPreciosScreenState extends State<ListasPreciosScreen> {
           trailing: l.activa ? 'Activa' : 'Inactiva',
           inactivo: !l.activa,
           filas: [MapEntry('Productos', '${l.items.length}')],
+          acciones: [
+            TextButton.icon(
+              onPressed: () => compartirListaPrecios(context, widget.sesion, l),
+              icon: const Icon(Icons.share_rounded, size: 16),
+              label: const Text('Compartir'),
+            ),
+          ],
         ),
       ),
     );

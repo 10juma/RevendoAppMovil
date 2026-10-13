@@ -226,7 +226,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
     if (agregado == true) {
       setState(() => _lineas.add(borrador));
     } else {
-      borrador.dispose();
+      liberarControladores([borrador.cantidad, borrador.costo]);
     }
   }
 

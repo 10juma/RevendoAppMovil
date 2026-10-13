@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../models/almacen.dart';
 import '../models/existencia.dart';
 import '../models/producto.dart';
 import '../models/sesion.dart';
 import '../services/api_client.dart';
+import '../theme.dart';
 import '../widgets/buscador_campo.dart';
 import '../widgets/form_scaffold.dart';
+import '../widgets/panel_inferior.dart';
+
+final _entero = NumberFormat.decimalPattern('es_MX');
 
 Producto? _buscarProducto(List<Producto> lista, String? id) {
   if (id == null) return null;
@@ -16,118 +21,110 @@ Producto? _buscarProducto(List<Producto> lista, String? id) {
   return null;
 }
 
-/// Ajustar la existencia de un producto en un almacén — mismo modal
-/// "Ajustar existencia" de /Admin/Existencias en la web: pone la cantidad en
-/// un valor absoluto, el servidor calcula el delta y registra el movimiento.
-class AjustarExistenciaScreen extends StatefulWidget {
-  final Sesion sesion;
-  final Existencia? existencia;
-  const AjustarExistenciaScreen({super.key, required this.sesion, this.existencia});
+/// Ajustar la existencia de un producto en un almacén, en un panel — mismo
+/// modal "Ajustar existencia" de /Admin/Existencias en la web: pone la
+/// cantidad en un valor absoluto, el servidor calcula el delta y registra el
+/// movimiento. En una existencia nueva arranca en el almacén principal, y al
+/// elegir producto y almacén dice cuánto hay y cuánto quedaría.
+/// Regresa `true` si se guardó.
+Future<bool> abrirAjustarExistencia(BuildContext context, Sesion sesion, {Existencia? existencia}) async {
+  final api = ApiClient(token: sesion.token);
+  var productoId = existencia?.productoId;
+  var almacenId = existencia?.almacenId;
+  final cantidad = TextEditingController(text: existencia?.cantidad.toStringAsFixed(2));
+  final nota = TextEditingController();
 
-  @override
-  State<AjustarExistenciaScreen> createState() => _AjustarExistenciaScreenState();
-}
+  var productos = <Producto>[];
+  var almacenes = <Almacen>[];
+  var existencias = <Existencia>[];
 
-class _AjustarExistenciaScreenState extends State<AjustarExistenciaScreen> {
-  final _formKey = GlobalKey<FormState>();
-  String? _productoId;
-  String? _almacenId;
-  late final _cantidad = TextEditingController(
-    text: widget.existencia?.cantidad.toStringAsFixed(2),
-  );
-  final _nota = TextEditingController();
+  final carga = () async {
+    final p = await api.listarProductos();
+    final a = await api.listarAlmacenes();
+    final e = await api.listarExistencias();
+    productos = p.map((x) => Producto.fromJson(x as Map<String, dynamic>)).toList();
+    almacenes = a
+        .map((x) => Almacen.fromJson(x as Map<String, dynamic>))
+        .where((x) => x.activo || x.id == existencia?.almacenId)
+        .toList();
+    existencias = e.map((x) => Existencia.fromJson(x as Map<String, dynamic>)).toList();
+    if (almacenId == null) {
+      final principal = almacenes.where((x) => x.esPrincipal && x.activo);
+      if (principal.isNotEmpty) almacenId = principal.first.id;
+    }
+  }();
 
-  bool _cargando = true;
-  List<Producto> _productos = [];
-  List<Almacen> _almacenes = [];
-
-  ApiClient get _api => ApiClient(token: widget.sesion.token);
-
-  @override
-  void initState() {
-    super.initState();
-    _productoId = widget.existencia?.productoId;
-    _almacenId = widget.existencia?.almacenId;
-    _cargarCatalogos();
+  double? hayEnSistema() {
+    if (productoId == null || almacenId == null) return null;
+    final e = existencias.where((x) => x.productoId == productoId && x.almacenId == almacenId);
+    return e.isEmpty ? 0 : e.first.cantidad;
   }
 
-  Future<void> _cargarCatalogos() async {
-    try {
-      final productos = await _api.listarProductos();
-      final almacenes = await _api.listarAlmacenes();
-      if (!mounted) return;
-      setState(() {
-        _productos = productos.map((e) => Producto.fromJson(e as Map<String, dynamic>)).toList();
-        _almacenes = almacenes.map((e) => Almacen.fromJson(e as Map<String, dynamic>)).toList();
-        _cargando = false;
+  final guardado = await mostrarPanelFormulario(
+    context: context,
+    titulo: 'Ajustar existencia',
+    carga: carga,
+    campos: (setPanel) => [
+      BuscadorCampo<Producto>(
+        etiqueta: 'Producto',
+        valor: _buscarProducto(productos, productoId),
+        opciones: productos,
+        etiquetaDe: (p) => p.nombre,
+        subtituloDe: (p) => p.sku,
+        hintBuscar: 'Buscar producto',
+        onChanged: (p) => setPanel(() => productoId = p?.id),
+        validator: (p) => p == null ? 'Selecciona un producto' : null,
+      ),
+      FormDropdown<String>(
+        etiqueta: 'Almacén',
+        valor: almacenId,
+        items: almacenes.map((a) => DropdownMenuItem(value: a.id, child: Text(a.nombre))).toList(),
+        onChanged: (v) => setPanel(() => almacenId = v),
+        validator: (v) => v == null ? 'Selecciona un almacén' : null,
+      ),
+      CampoTexto(
+        etiqueta: 'Cantidad nueva',
+        controller: cantidad,
+        teclado: const TextInputType.numberWithOptions(decimal: true),
+        validator: (v) {
+          final n = double.tryParse(v?.trim() ?? '');
+          if (n == null || n < 0) return 'La cantidad no puede ser negativa';
+          return null;
+        },
+      ),
+      AnimatedBuilder(
+        animation: cantidad,
+        builder: (context, _) {
+          final hay = hayEnSistema();
+          final producto = _buscarProducto(productos, productoId);
+          if (hay == null || producto == null) return const SizedBox.shrink();
+          final unidad = producto.unidadMedida.toLowerCase();
+          final nueva = double.tryParse(cantidad.text.trim());
+          final delta = nueva == null ? null : nueva - hay;
+          final signo = delta == null ? '' : (delta > 0 ? '+' : '');
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Text(
+              nueva == null
+                  ? 'Hay ${_entero.format(hay)} $unidad en el sistema.'
+                  : 'Hay ${_entero.format(hay)} $unidad — con el ajuste quedarán ${_entero.format(nueva)} $unidad ($signo${_entero.format(delta)}).',
+              style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+            ),
+          );
+        },
+      ),
+      CampoTexto(etiqueta: 'Nota (opcional)', controller: nota, maxLines: 2),
+    ],
+    onGuardar: () async {
+      await api.ajustarExistencia({
+        'productoId': productoId,
+        'almacenId': almacenId,
+        'cantidadNueva': double.parse(cantidad.text.trim()),
+        'nota': nota.text.trim(),
       });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _cargando = false);
-    }
-  }
+    },
+  );
 
-  @override
-  void dispose() {
-    _cantidad.dispose();
-    _nota.dispose();
-    super.dispose();
-  }
-
-  Future<void> _guardar() async {
-    await _api.ajustarExistencia({
-      'productoId': _productoId,
-      'almacenId': _almacenId,
-      'cantidadNueva': double.parse(_cantidad.text.trim()),
-      'nota': _nota.text.trim(),
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_cargando) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Ajustar existencia')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return FormScaffold(
-      titulo: 'Ajustar existencia',
-      formKey: _formKey,
-      onGuardar: _guardar,
-      children: [
-        BuscadorCampo<Producto>(
-          etiqueta: 'Producto',
-          valor: _buscarProducto(_productos, _productoId),
-          opciones: _productos,
-          etiquetaDe: (p) => p.nombre,
-          subtituloDe: (p) => p.sku,
-          hintBuscar: 'Buscar producto',
-          onChanged: (p) => setState(() => _productoId = p?.id),
-          validator: (p) => p == null ? 'Selecciona un producto' : null,
-        ),
-        FormDropdown<String>(
-          etiqueta: 'Almacén',
-          valor: _almacenId,
-          items: _almacenes
-              .map((a) => DropdownMenuItem(value: a.id, child: Text(a.nombre)))
-              .toList(),
-          onChanged: (v) => setState(() => _almacenId = v),
-          validator: (v) => v == null ? 'Selecciona un almacén' : null,
-        ),
-        CampoTexto(
-          etiqueta: 'Cantidad actual',
-          controller: _cantidad,
-          teclado: const TextInputType.numberWithOptions(decimal: true),
-          validator: (v) {
-            final n = double.tryParse(v?.trim() ?? '');
-            if (n == null || n < 0) return 'La cantidad no puede ser negativa';
-            return null;
-          },
-        ),
-        CampoTexto(etiqueta: 'Nota (opcional)', controller: _nota, maxLines: 2),
-      ],
-    );
-  }
+  liberarControladores([cantidad, nota]);
+  return guardado;
 }

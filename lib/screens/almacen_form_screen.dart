@@ -4,6 +4,7 @@ import '../models/almacen.dart';
 import '../models/sesion.dart';
 import '../services/api_client.dart';
 import '../widgets/form_scaffold.dart';
+import '../widgets/panel_inferior.dart';
 
 const _tipoOptions = [
   DropdownMenuItem(value: 'Bodega', child: Text('Bodega')),
@@ -11,87 +12,60 @@ const _tipoOptions = [
   DropdownMenuItem(value: 'Vehiculo', child: Text('Vehículo / ruta')),
 ];
 
-/// Alta/edición de un almacén — mismos campos que el modal de
-/// /Admin/Almacenes en la web.
-class AlmacenFormScreen extends StatefulWidget {
-  final Sesion sesion;
-  final Almacen? almacen;
-  const AlmacenFormScreen({super.key, required this.sesion, this.almacen});
+/// Alta/edición de un almacén en un panel — mismos campos que el modal de
+/// /Admin/Almacenes en la web. Regresa `true` si se guardó.
+Future<bool> abrirFormularioAlmacen(BuildContext context, Sesion sesion, {Almacen? almacen}) async {
+  final api = ApiClient(token: sesion.token);
+  final editando = almacen != null;
+  final nombre = TextEditingController(text: almacen?.nombre);
+  final direccion = TextEditingController(text: almacen?.direccion);
+  final telefono = TextEditingController(text: almacen?.telefono);
+  var tipo = almacen?.tipo ?? 'Bodega';
+  var esPrincipal = almacen?.esPrincipal ?? false;
+  var activo = almacen?.activo ?? true;
 
-  @override
-  State<AlmacenFormScreen> createState() => _AlmacenFormScreenState();
-}
+  final guardado = await mostrarPanelFormulario(
+    context: context,
+    titulo: editando ? 'Editar almacén' : 'Nuevo almacén',
+    campos: (setPanel) => [
+      CampoTexto(
+        etiqueta: 'Nombre',
+        controller: nombre,
+        validator: (v) => (v == null || v.trim().isEmpty) ? 'Escribe el nombre del almacén' : null,
+      ),
+      FormDropdown<String>(
+        etiqueta: 'Tipo',
+        valor: tipo,
+        items: _tipoOptions,
+        onChanged: (v) => setPanel(() => tipo = v!),
+      ),
+      CampoTexto(etiqueta: 'Dirección', controller: direccion),
+      CampoTexto(etiqueta: 'Teléfono', controller: telefono, teclado: TextInputType.phone),
+      FormSwitch(
+        etiqueta: 'Almacén principal',
+        valor: esPrincipal,
+        onChanged: (v) => setPanel(() => esPrincipal = v),
+      ),
+      if (editando)
+        FormSwitch(etiqueta: 'Activo', valor: activo, onChanged: (v) => setPanel(() => activo = v)),
+    ],
+    onGuardar: () async {
+      final body = {
+        'nombre': nombre.text.trim(),
+        'tipo': tipo,
+        'direccion': direccion.text.trim(),
+        'telefono': telefono.text.trim(),
+        'esPrincipal': esPrincipal,
+        'activo': activo,
+      };
+      if (editando) {
+        await api.actualizarAlmacen(almacen.id, body);
+      } else {
+        await api.crearAlmacen(body);
+      }
+    },
+  );
 
-class _AlmacenFormScreenState extends State<AlmacenFormScreen> {
-  final _formKey = GlobalKey<FormState>();
-  late final _nombre = TextEditingController(text: widget.almacen?.nombre);
-  late final _direccion = TextEditingController(text: widget.almacen?.direccion);
-  late final _telefono = TextEditingController(text: widget.almacen?.telefono);
-  late String _tipo = widget.almacen?.tipo ?? 'Bodega';
-  late bool _esPrincipal = widget.almacen?.esPrincipal ?? false;
-  late bool _activo = widget.almacen?.activo ?? true;
-
-  bool get _editando => widget.almacen != null;
-
-  ApiClient get _api => ApiClient(token: widget.sesion.token);
-
-  @override
-  void dispose() {
-    _nombre.dispose();
-    _direccion.dispose();
-    _telefono.dispose();
-    super.dispose();
-  }
-
-  Future<void> _guardar() async {
-    final body = {
-      'nombre': _nombre.text.trim(),
-      'tipo': _tipo,
-      'direccion': _direccion.text.trim(),
-      'telefono': _telefono.text.trim(),
-      'esPrincipal': _esPrincipal,
-      'activo': _activo,
-    };
-    if (_editando) {
-      await _api.actualizarAlmacen(widget.almacen!.id, body);
-    } else {
-      await _api.crearAlmacen(body);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FormScaffold(
-      titulo: _editando ? 'Editar almacén' : 'Nuevo almacén',
-      formKey: _formKey,
-      onGuardar: _guardar,
-      children: [
-        CampoTexto(
-          etiqueta: 'Nombre',
-          controller: _nombre,
-          validator: (v) =>
-              (v == null || v.trim().isEmpty) ? 'Escribe el nombre del almacén' : null,
-        ),
-        FormDropdown<String>(
-          etiqueta: 'Tipo',
-          valor: _tipo,
-          items: _tipoOptions,
-          onChanged: (v) => setState(() => _tipo = v!),
-        ),
-        CampoTexto(etiqueta: 'Dirección', controller: _direccion),
-        CampoTexto(etiqueta: 'Teléfono', controller: _telefono, teclado: TextInputType.phone),
-        FormSwitch(
-          etiqueta: 'Almacén principal',
-          valor: _esPrincipal,
-          onChanged: (v) => setState(() => _esPrincipal = v),
-        ),
-        if (_editando)
-          FormSwitch(
-            etiqueta: 'Activo',
-            valor: _activo,
-            onChanged: (v) => setState(() => _activo = v),
-          ),
-      ],
-    );
-  }
+  liberarControladores([nombre, direccion, telefono]);
+  return guardado;
 }

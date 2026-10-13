@@ -53,13 +53,8 @@ class _ProveedoresScreenState extends State<ProveedoresScreen> {
   }
 
   Future<void> _abrirFormulario([Proveedor? proveedor]) async {
-    final guardado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ProveedorFormScreen(sesion: widget.sesion, proveedor: proveedor),
-      ),
-    );
-    if (guardado == true) _listKey.currentState?.reload();
+    final guardado = await abrirFormularioProveedor(context, widget.sesion, proveedor: proveedor);
+    if (guardado) _listKey.currentState?.reload();
   }
 
   @override

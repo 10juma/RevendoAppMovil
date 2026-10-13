@@ -82,13 +82,8 @@ class _AlmacenesScreenState extends State<AlmacenesScreen> {
   }
 
   Future<void> _abrirFormulario([Almacen? almacen]) async {
-    final guardado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AlmacenFormScreen(sesion: widget.sesion, almacen: almacen),
-      ),
-    );
-    if (guardado == true) _listKey.currentState?.reload();
+    final guardado = await abrirFormularioAlmacen(context, widget.sesion, almacen: almacen);
+    if (guardado) _listKey.currentState?.reload();
   }
 
   @override

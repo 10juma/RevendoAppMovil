@@ -38,7 +38,10 @@ Future<void> compartirWidgetComoImagen({
     await WidgetsBinding.instance.endOfFrame;
 
     final boundary = key.currentContext!.findRenderObject() as RenderRepaintBoundary;
-    final imagen = await boundary.toImage(pixelRatio: 3.0);
+    // Las listas largas (muchos productos) pueden pasar del tamaño máximo de textura,
+    // así que se baja la resolución solo si hace falta.
+    final pixelRatio = boundary.size.height * 3.0 > 8000 ? 8000 / boundary.size.height : 3.0;
+    final imagen = await boundary.toImage(pixelRatio: pixelRatio);
     final byteData = await imagen.toByteData(format: ui.ImageByteFormat.png);
     final bytes = byteData!.buffer.asUint8List();
 

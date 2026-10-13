@@ -125,13 +125,8 @@ class _ExistenciasScreenState extends State<ExistenciasScreen> {
   }
 
   Future<void> _abrirFormulario([Existencia? existencia]) async {
-    final guardado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AjustarExistenciaScreen(sesion: widget.sesion, existencia: existencia),
-      ),
-    );
-    if (guardado == true) _listKey.currentState?.reload();
+    final guardado = await abrirAjustarExistencia(context, widget.sesion, existencia: existencia);
+    if (guardado) _listKey.currentState?.reload();
   }
 
   @override

@@ -10,6 +10,7 @@ import '../theme.dart';
 import '../widgets/buscador_campo.dart';
 import '../widgets/filter_bar.dart';
 import '../widgets/form_scaffold.dart';
+import '../widgets/panel_inferior.dart';
 import '../widgets/info_card.dart';
 import '../widgets/simple_list_screen.dart';
 import 'venta_detalle_screen.dart';
@@ -306,8 +307,7 @@ class _VentasScreenState extends State<VentasScreen> {
       ),
     );
 
-    nombreNuevo.dispose();
-    telefonoNuevo.dispose();
+    liberarControladores([nombreNuevo, telefonoNuevo]);
   }
 
   @override

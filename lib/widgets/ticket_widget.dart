@@ -76,7 +76,7 @@ class TicketWidget extends StatelessWidget {
             style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
           const SizedBox(height: 16),
-          const _LineaPunteada(),
+          const LineaPunteada(),
           const SizedBox(height: 12),
           if (contraparteNombre != null) ...[
             _filaExtra(contraparteEtiqueta ?? '', contraparteNombre!),
@@ -87,7 +87,7 @@ class TicketWidget extends StatelessWidget {
                 child: _filaExtra(e.key, e.value),
               )),
           const SizedBox(height: 8),
-          const _LineaPunteada(),
+          const LineaPunteada(),
           const SizedBox(height: 12),
           ...lineas.map((l) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -117,7 +117,7 @@ class TicketWidget extends StatelessWidget {
                 ),
               )),
           const SizedBox(height: 8),
-          const _LineaPunteada(),
+          const LineaPunteada(),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -174,8 +174,9 @@ class TicketWidget extends StatelessWidget {
   }
 }
 
-class _LineaPunteada extends StatelessWidget {
-  const _LineaPunteada();
+/// Separador punteado de los tickets/listas compartibles.
+class LineaPunteada extends StatelessWidget {
+  const LineaPunteada({super.key});
 
   @override
   Widget build(BuildContext context) {

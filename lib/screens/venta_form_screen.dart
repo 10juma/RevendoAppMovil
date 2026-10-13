@@ -406,7 +406,7 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
     if (agregado == true) {
       setState(() => _lineas.add(borrador));
     } else {
-      borrador.dispose();
+      liberarControladores([borrador.cantidad, borrador.precio]);
     }
   }
 
