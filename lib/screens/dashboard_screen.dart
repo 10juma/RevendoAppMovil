@@ -21,7 +21,7 @@ import 'productos_screen.dart';
 import 'proveedores_screen.dart';
 import 'reportes_screen.dart';
 import 'rutas_screen.dart';
-import 'venta_form_screen.dart';
+import 'venta_detalle_screen.dart';
 import 'ventas_screen.dart';
 
 const _nombresMes = [
@@ -169,11 +169,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _abrirNuevaVenta() async {
-    final guardado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => VentaFormScreen(sesion: widget.sesion)),
-    );
-    if (guardado == true) _cargar();
+    final cambio = await abrirNuevaVenta(context, widget.sesion);
+    if (cambio) _cargar();
   }
 
   Future<void> _abrirNuevoCliente() async {

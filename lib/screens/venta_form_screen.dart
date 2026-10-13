@@ -12,6 +12,7 @@ import '../services/api_client.dart';
 import '../theme.dart';
 import '../widgets/buscador_campo.dart';
 import '../widgets/form_scaffold.dart';
+import '../widgets/panel_inferior.dart';
 
 final _moneda = NumberFormat.currency(locale: 'es_MX', symbol: '\$', decimalDigits: 2);
 final _entero = NumberFormat.decimalPattern('es_MX');
@@ -68,11 +69,11 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
   DateTime _fechaSel = DateTime.now();
   Cliente? _clienteSel;
   String? _almacenId;
-  String _canal = 'Tienda';
+  String _canal = 'WhatsApp';
   bool _pagada = true;
   bool _entregado = true;
   final _nota = TextEditingController();
-  final List<_Linea> _lineas = [_Linea()];
+  final List<_Linea> _lineas = [];
 
   bool _cargando = true;
   List<Cliente> _clientes = [];
@@ -84,6 +85,9 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
   List<_OpcionProducto> _opciones = [];
 
   bool get _editando => widget.venta != null;
+
+  /// La venta recién creada, para que quien abrió el formulario pueda llevar al detalle.
+  Venta? _creada;
 
   ApiClient get _api => ApiClient(token: widget.sesion.token);
 
@@ -111,6 +115,11 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
             .map((e) => Almacen.fromJson(e as Map<String, dynamic>))
             .where((a) => a.activo || a.id == widget.venta?.almacenId)
             .toList();
+        // Una venta/compra nueva arranca en el almacén principal, si hay uno activo.
+        if (!_editando) {
+          final principal = _almacenes.where((a) => a.esPrincipal && a.activo);
+          if (principal.isNotEmpty) _almacenId = principal.first.id;
+        }
         _productos = productos
             .map((e) => Producto.fromJson(e as Map<String, dynamic>))
             .where((p) => p.tipo != 'Insumo' && (p.activo || (widget.venta?.items.any((i) => i.productoId == p.id) ?? false)))
@@ -282,11 +291,123 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
 
   /// Cambiar el producto siempre refresca el precio al de la lista activa (o al
   /// de catálogo) del producto nuevo — sigue siendo editable a mano.
-  void _onProductoElegido(_Linea linea, _OpcionProducto? opcion) {
-    setState(() {
-      linea.opcion = opcion;
-      linea.precio.text = opcion == null ? '' : _precioDe(opcion.productos.first).toStringAsFixed(2);
-    });
+  void _aplicarOpcion(_Linea linea, _OpcionProducto? opcion) {
+    linea.opcion = opcion;
+    linea.precio.text = opcion == null ? '' : _precioDe(opcion.productos.first).toStringAsFixed(2);
+  }
+
+  /// Texto de existencia de una línea: "Disponible: N — quedarán M". Null si
+  /// aún no hay producto o almacén para calcularlo.
+  Widget? _textoDisponible(_Linea linea) {
+    final disponible = _disponiblePara(linea);
+    if (disponible == null) return null;
+    final cantidad = double.tryParse(linea.cantidad.text.trim()) ?? 0;
+    final restante = disponible - cantidad;
+    final unidad = linea.opcion!.productos.first.unidadMedida.toLowerCase();
+    final de = linea.opcion!.grupo ? 'Disponible entre variantes ligadas' : 'Disponible';
+    return Text(
+      cantidad > 0
+          ? '$de: ${_entero.format(disponible)} $unidad — quedarán ${_entero.format(restante)} $unidad'
+          : '$de: ${_entero.format(disponible)} $unidad',
+      style: TextStyle(
+        fontSize: 12,
+        color: restante < 0 ? AppColors.error : AppColors.textMuted,
+        fontWeight: restante < 0 ? FontWeight.w600 : FontWeight.normal,
+      ),
+    );
+  }
+
+  /// Panel "Agregar producto": se captura producto, cantidad y precio y, al
+  /// confirmar, queda como una tarjeta de la lista (que se sigue pudiendo
+  /// editar). Si se cierra sin confirmar no se agrega nada.
+  Future<void> _abrirAgregarProducto() async {
+    final borrador = _Linea();
+    String? error;
+
+    final agregado = await mostrarPanelInferior<bool>(
+      context: context,
+      titulo: 'Agregar producto',
+      contenido: (ctx, setPanel) {
+        final disponible = _textoDisponible(borrador);
+        final promo = borrador.opcion == null ? null : _promoDe(borrador.opcion!);
+        final cantidad = double.tryParse(borrador.cantidad.text.trim()) ?? 0;
+        final precio = double.tryParse(borrador.precio.text.trim()) ?? 0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (error != null) ErrorPanel(error!),
+            BuscadorCampo<_OpcionProducto>(
+              etiqueta: 'Producto',
+              valor: borrador.opcion,
+              opciones: _opciones,
+              etiquetaDe: (o) => o.etiqueta,
+              subtituloDe: (o) => o.grupo ? 'Variantes ligadas' : o.productos.first.sku,
+              hintBuscar: 'Buscar producto',
+              onChanged: (o) => setPanel(() => _aplicarOpcion(borrador, o)),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: borrador.cantidad,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Cantidad', isDense: true),
+                    onChanged: (_) => setPanel(() {}),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextFormField(
+                    controller: borrador.precio,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Precio unitario', isDense: true),
+                    onChanged: (_) => setPanel(() {}),
+                  ),
+                ),
+              ],
+            ),
+            if (disponible != null) ...[const SizedBox(height: 8), disponible],
+            if (promo != null) ...[
+              const SizedBox(height: 4),
+              Text(promo, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+            ],
+            if (cantidad > 0) ...[
+              const SizedBox(height: 8),
+              Text('Subtotal: ${_moneda.format(cantidad * precio)}',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+            ],
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Agregar'),
+                onPressed: () {
+                  final c = double.tryParse(borrador.cantidad.text.trim());
+                  final p = double.tryParse(borrador.precio.text.trim());
+                  if (borrador.opcion == null) {
+                    setPanel(() => error = 'Selecciona un producto.');
+                  } else if (c == null || c <= 0) {
+                    setPanel(() => error = 'Escribe una cantidad válida.');
+                  } else if (p == null || p < 0) {
+                    setPanel(() => error = 'Escribe un precio válido.');
+                  } else {
+                    Navigator.pop(ctx, true);
+                  }
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (agregado == true) {
+      setState(() => _lineas.add(borrador));
+    } else {
+      borrador.dispose();
+    }
   }
 
   Future<void> _guardar() async {
@@ -350,7 +471,7 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
     if (_editando) {
       await _api.actualizarVenta(widget.venta!.id, body);
     } else {
-      await _api.crearVenta(body);
+      _creada = Venta.fromJson(await _api.crearVenta(body));
     }
   }
 
@@ -377,6 +498,7 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
       titulo: _editando ? 'Editar venta' : 'Nueva venta',
       formKey: _formKey,
       onGuardar: _guardar,
+      resultado: () => _creada,
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 14),
@@ -437,11 +559,19 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
         FormSeccion(
           'Productos',
           accion: TextButton.icon(
-            onPressed: () => setState(() => _lineas.add(_Linea())),
+            onPressed: _abrirAgregarProducto,
             icon: const Icon(Icons.add_rounded, size: 18),
             label: const Text('Agregar'),
           ),
         ),
+        if (_lineas.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Aún no agregas productos. Toca "Agregar" para añadir el primero.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+            ),
+          ),
         if (_lista != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -475,17 +605,16 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
                         etiquetaDe: (o) => o.etiqueta,
                         subtituloDe: (o) => o.grupo ? 'Variantes ligadas' : o.productos.first.sku,
                         hintBuscar: 'Buscar producto',
-                        onChanged: (o) => _onProductoElegido(linea, o),
+                        onChanged: (o) => setState(() => _aplicarOpcion(linea, o)),
                       ),
                     ),
-                    if (_lineas.length > 1)
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        onPressed: () => setState(() {
-                          linea.dispose();
-                          _lineas.removeAt(i);
-                        }),
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () => setState(() {
+                        linea.dispose();
+                        _lineas.removeAt(i);
+                      }),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -510,25 +639,9 @@ class _VentaFormScreenState extends State<VentaFormScreen> {
                     ),
                   ],
                 ),
-                if (_disponiblePara(linea) != null) ...[
+                if (_textoDisponible(linea) != null) ...[
                   const SizedBox(height: 6),
-                  Builder(builder: (context) {
-                    final disponible = _disponiblePara(linea)!;
-                    final cantidad = double.tryParse(linea.cantidad.text.trim()) ?? 0;
-                    final restante = disponible - cantidad;
-                    final unidad = linea.opcion!.productos.first.unidadMedida.toLowerCase();
-                    final de = linea.opcion!.grupo ? 'Disponible entre variantes ligadas' : 'Disponible';
-                    return Text(
-                      cantidad > 0
-                          ? '$de: ${_entero.format(disponible)} $unidad — quedarán ${_entero.format(restante)} $unidad'
-                          : '$de: ${_entero.format(disponible)} $unidad',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: restante < 0 ? AppColors.error : AppColors.textMuted,
-                        fontWeight: restante < 0 ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    );
-                  }),
+                  _textoDisponible(linea)!,
                 ],
                 if (linea.opcion != null && _promoDe(linea.opcion!) != null) ...[
                   const SizedBox(height: 4),

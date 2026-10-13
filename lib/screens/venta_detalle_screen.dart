@@ -41,6 +41,25 @@ Future<void> compartirTicketVenta(BuildContext context, Sesion sesion, Venta v) 
   );
 }
 
+/// Abre "Nueva venta" y, al guardarla, lleva directo al detalle de la venta
+/// creada (de ahí se comparte el ticket o se edita). Regresa `true` si se
+/// creó o cambió algo, para que quien la abrió recargue su lista.
+Future<bool> abrirNuevaVenta(BuildContext context, Sesion sesion) async {
+  final resultado = await Navigator.push<Object>(
+    context,
+    MaterialPageRoute(builder: (_) => VentaFormScreen(sesion: sesion)),
+  );
+  if (resultado is Venta) {
+    if (!context.mounted) return true;
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => VentaDetalleScreen(sesion: sesion, venta: resultado)),
+    );
+    return true;
+  }
+  return resultado == true;
+}
+
 /// Detalle de una venta — cliente, almacén, canal, entrega, productos y total.
 /// Desde aquí se edita (misma conciliación de inventario que la web) o se
 /// comparte el ticket. Regresa `true` si hubo cambios, para que la lista recargue.

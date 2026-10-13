@@ -10,6 +10,7 @@ import '../services/api_client.dart';
 import '../theme.dart';
 import '../widgets/buscador_campo.dart';
 import '../widgets/form_scaffold.dart';
+import '../widgets/panel_inferior.dart';
 
 final _moneda = NumberFormat.currency(locale: 'es_MX', symbol: '\$', decimalDigits: 2);
 String _fecha(DateTime d) => '${d.day}/${d.month}/${d.year}';
@@ -42,7 +43,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   Proveedor? _proveedorSel;
   String? _almacenId;
   final _nota = TextEditingController();
-  final List<_Linea> _lineas = [_Linea()];
+  final List<_Linea> _lineas = [];
 
   bool _cargando = true;
   List<Proveedor> _proveedores = [];
@@ -74,6 +75,11 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
             .map((e) => Almacen.fromJson(e as Map<String, dynamic>))
             .where((a) => a.activo || a.id == widget.compra?.almacenId)
             .toList();
+        // Una venta/compra nueva arranca en el almacén principal, si hay uno activo.
+        if (!_editando) {
+          final principal = _almacenes.where((a) => a.esPrincipal && a.activo);
+          if (principal.isNotEmpty) _almacenId = principal.first.id;
+        }
         _productos = productos.map((e) => Producto.fromJson(e as Map<String, dynamic>)).toList();
         _precargarCompra();
         _cargando = false;
@@ -131,13 +137,97 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
     if (elegida != null) setState(() => _fechaSel = elegida);
   }
 
-  void _onProductoElegido(_Linea linea, Producto? producto) {
-    setState(() {
-      linea.producto = producto;
-      if (producto != null && producto.costo != null && linea.costo.text.isEmpty) {
-        linea.costo.text = producto.costo!.toStringAsFixed(2);
-      }
-    });
+  void _aplicarProducto(_Linea linea, Producto? producto) {
+    linea.producto = producto;
+    if (producto != null && producto.costo != null) {
+      linea.costo.text = producto.costo!.toStringAsFixed(2);
+    }
+  }
+
+  /// Panel "Agregar producto": se captura producto, cantidad y costo y, al
+  /// confirmar, queda como una tarjeta de la lista (que se sigue pudiendo
+  /// editar). Si se cierra sin confirmar no se agrega nada.
+  Future<void> _abrirAgregarProducto() async {
+    final borrador = _Linea();
+    String? error;
+
+    final agregado = await mostrarPanelInferior<bool>(
+      context: context,
+      titulo: 'Agregar producto',
+      contenido: (ctx, setPanel) {
+        final cantidad = double.tryParse(borrador.cantidad.text.trim()) ?? 0;
+        final costo = double.tryParse(borrador.costo.text.trim()) ?? 0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (error != null) ErrorPanel(error!),
+            BuscadorCampo<Producto>(
+              etiqueta: 'Producto',
+              valor: borrador.producto,
+              opciones: _productos,
+              etiquetaDe: (p) => p.nombre,
+              subtituloDe: (p) => p.sku,
+              hintBuscar: 'Buscar producto',
+              onChanged: (p) => setPanel(() => _aplicarProducto(borrador, p)),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: borrador.cantidad,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Cantidad', isDense: true),
+                    onChanged: (_) => setPanel(() {}),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextFormField(
+                    controller: borrador.costo,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Costo unitario', isDense: true),
+                    onChanged: (_) => setPanel(() {}),
+                  ),
+                ),
+              ],
+            ),
+            if (cantidad > 0) ...[
+              const SizedBox(height: 8),
+              Text('Subtotal: ${_moneda.format(cantidad * costo)}',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+            ],
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Agregar'),
+                onPressed: () {
+                  final c = double.tryParse(borrador.cantidad.text.trim());
+                  final k = double.tryParse(borrador.costo.text.trim());
+                  if (borrador.producto == null) {
+                    setPanel(() => error = 'Selecciona un producto.');
+                  } else if (c == null || c <= 0) {
+                    setPanel(() => error = 'Escribe una cantidad válida.');
+                  } else if (k == null || k < 0) {
+                    setPanel(() => error = 'Escribe un costo válido.');
+                  } else {
+                    Navigator.pop(ctx, true);
+                  }
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (agregado == true) {
+      setState(() => _lineas.add(borrador));
+    } else {
+      borrador.dispose();
+    }
   }
 
   Future<void> _guardar() async {
@@ -224,15 +314,24 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
         FormSeccion(
           'Productos',
           accion: TextButton.icon(
-            onPressed: () => setState(() => _lineas.add(_Linea())),
+            onPressed: _abrirAgregarProducto,
             icon: const Icon(Icons.add_rounded, size: 18),
             label: const Text('Agregar'),
           ),
         ),
+        if (_lineas.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Aún no agregas productos. Toca "Agregar" para añadir el primero.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+            ),
+          ),
         ..._lineas.asMap().entries.map((entry) {
           final i = entry.key;
           final linea = entry.value;
           return Container(
+            key: ObjectKey(linea),
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -253,17 +352,16 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
                         etiquetaDe: (p) => p.nombre,
                         subtituloDe: (p) => p.sku,
                         hintBuscar: 'Buscar producto',
-                        onChanged: (p) => _onProductoElegido(linea, p),
+                        onChanged: (p) => setState(() => _aplicarProducto(linea, p)),
                       ),
                     ),
-                    if (_lineas.length > 1)
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        onPressed: () => setState(() {
-                          linea.dispose();
-                          _lineas.removeAt(i);
-                        }),
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () => setState(() {
+                        linea.dispose();
+                        _lineas.removeAt(i);
+                      }),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),

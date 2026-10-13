@@ -13,7 +13,6 @@ import '../widgets/form_scaffold.dart';
 import '../widgets/info_card.dart';
 import '../widgets/simple_list_screen.dart';
 import 'venta_detalle_screen.dart';
-import 'venta_form_screen.dart';
 
 final _moneda = NumberFormat.currency(
   locale: 'es_MX',
@@ -192,11 +191,8 @@ class _VentasScreenState extends State<VentasScreen> {
   }
 
   Future<void> _abrirFormulario() async {
-    final guardado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => VentaFormScreen(sesion: widget.sesion)),
-    );
-    if (guardado == true) _listKey.currentState?.reload();
+    final cambio = await abrirNuevaVenta(context, widget.sesion);
+    if (cambio) _listKey.currentState?.reload();
   }
 
   Future<void> _abrirDetalle(Venta v) async {

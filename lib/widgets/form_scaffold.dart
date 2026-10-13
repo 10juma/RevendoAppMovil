@@ -16,6 +16,10 @@ class FormScaffold extends StatefulWidget {
   final Widget? accionExtra;
   final GlobalKey<FormState>? formKey;
 
+  /// Qué regresa la pantalla al guardar (por defecto `true`). Sirve para que
+  /// quien la abrió reciba, por ejemplo, el registro recién creado.
+  final Object? Function()? resultado;
+
   const FormScaffold({
     super.key,
     required this.titulo,
@@ -24,6 +28,7 @@ class FormScaffold extends StatefulWidget {
     this.textoBoton = 'Guardar',
     this.accionExtra,
     this.formKey,
+    this.resultado,
   });
 
   @override
@@ -45,7 +50,7 @@ class _FormScaffoldState extends State<FormScaffold> {
     try {
       await widget.onGuardar();
       if (!mounted) return;
-      Navigator.pop(context, true);
+      Navigator.pop(context, widget.resultado?.call() ?? true);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
