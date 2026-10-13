@@ -215,7 +215,7 @@ class BuscadorCampo<T> extends FormField<T> {
                   state.value != null ? etiquetaDe(state.value as T) : textoSinSeleccion,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: state.value != null ? AppColors.text : AppColors.textMuted,
+                    color: state.value != null || permiteVacio ? AppColors.text : AppColors.textMuted,
                   ),
                 ),
               ),
